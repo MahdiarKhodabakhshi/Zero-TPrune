@@ -70,6 +70,75 @@ def s_stage_importance(
     return dist[:, 1:]
 
 
+def i_stage_importance(
+    attention_score: torch.Tensor,
+    token_mask: Optional[torch.Tensor],
+    *,
+    tau_imp: float = 0.1,
+    i_cfg: Optional[IStageConfig] = None,
+    v: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    i_cfg = i_cfg or IStageConfig()
+
+    B, H, N, _ = attention_score.shape
+    attn = (attention_score / tau_imp).exp()
+    if token_mask is not None:
+        if token_mask.dim() == 2:
+            attn = attn * token_mask[:, None, None, :]
+        else:
+            attn = attn * token_mask
+
+    M = attn / attn.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    if i_cfg.use_WPR:
+        if i_cfg.aug_CLS:
+            if i_cfg.aug_method == "weight":
+                alpha = float(N) / 2.0
+                init = torch.ones(B, H, 1, N, device=M.device)
+                init[:, :, :, 0] = 1.0 + alpha
+                dist = init / (N + alpha)
+            elif i_cfg.aug_method == "norm":
+                if v is None:
+                    alpha = float(N) / 2.0
+                    init = torch.ones(B, H, 1, N, device=M.device)
+                    init[:, :, :, 0] = 1.0 + alpha
+                    dist = init / (N + alpha)
+                else:
+                    init = attention_score[:, :, 0, :].unsqueeze(-2) * torch.norm(v, dim=-1).unsqueeze(-2)
+                    alpha = init.sum(dim=-1)
+                    init[:, :, :, 0] = init[:, :, :, 0] + alpha
+                    dist = init / init.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+            else:
+                raise ValueError("Invalid aug_method")
+        else:
+            dist = torch.ones(B, H, 1, N, device=M.device) / N
+
+        if i_cfg.iters < 1:
+            raise ValueError("iters must be >= 1")
+        d = float(i_cfg.d)
+        for _ in range(i_cfg.iters):
+            dist = (dist @ M) * (1.0 - d) + (d / N)
+
+        if i_cfg.var_filter == 1:
+            dist_v = dist.squeeze(2)
+
+        dist = dist.squeeze(2)
+        if i_cfg.use_EIR:
+            dist = torch.mean(dist.pow(2), dim=1).sqrt()
+        else:
+            dist = torch.mean(dist, dim=1)
+    else:
+        if i_cfg.alt_method == "ave":
+            base = torch.mean(M, dim=2)
+            dist = torch.mean(base.pow(2), dim=1).sqrt() if i_cfg.use_EIR else torch.mean(base, dim=1)
+        elif i_cfg.alt_method == "rand":
+            dist = torch.rand(B, N, device=M.device)
+        else:
+            raise ValueError("Invalid alt_method")
+
+    return dist[:, 1:]
+
+
 def _partition_order(
     B: int, n_tokens: int, mode: PartitionT, device: torch.device
 ) -> torch.Tensor:
