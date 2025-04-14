@@ -215,6 +215,10 @@ def s_stage_step(
     cfg: Optional[SStageConfig] = None,
     k_keep: Optional[int] = None,
     threshold: Optional[float] = None,
+    # NEW (I-stage support)
+    use_i_stage: bool = False,
+    i_cfg: Optional[IStageConfig] = None,
+    v: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     cfg = cfg or SStageConfig(
         tau_imp=0.1,
@@ -227,7 +231,20 @@ def s_stage_step(
     B, H, N, _ = attention_score.shape
     device = attention_score.device
 
-    importance = s_stage_importance(attention_score, token_mask, tau_imp=cfg.tau_imp)
+    if use_i_stage:
+        importance = i_stage_importance(
+            attention_score,
+            token_mask,
+            tau_imp=cfg.tau_imp,
+            i_cfg=i_cfg,
+            v=v,
+        )
+    else:
+        importance = s_stage_importance(
+            attention_score,
+            token_mask,
+            tau_imp=cfg.tau_imp,
+        )
 
     order = _partition_order(B, N - 1, cfg.partition, device)
 
@@ -243,26 +260,3 @@ def s_stage_step(
         torch.save(next_mask.detach().cpu(), "mask.pt")
 
     return importance, next_mask
-
-if __name__ == "__main__":
-    torch.manual_seed(0)
-
-    B, H, N = 2, 4, 9
-    logits = torch.randn(B, H, N, N)
-
-    imp, nxt = s_stage_step(
-        attention_score=logits,
-        token_mask=None,
-        cfg=SStageConfig(
-            tau_imp=0.1,
-            metric="Cos",
-            partition="Seq-U",
-            use_threshold=False,
-            save_mask=False,
-        ),
-        k_keep=4,
-    )
-
-    print("importance shape:", imp.shape)
-    print("next_mask shape :", nxt.shape)
-    print("kept per sample :", nxt.sum(dim=1).tolist())
