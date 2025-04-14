@@ -7,12 +7,12 @@ import torch
 import torch.nn.functional as F
 
 
-use_s_stage = True  # whether to use S-stage for similarity-based pruning
-sim_feature = "Key"  # "Key", "Query", "Value", "X_pre", "X" (placeholder here)
-partition = "Seq-U"  # "Seq-U", "Seq-I", "Rand", "Alt", "Full"
-sim_metric = "Cos"   # "Dot", "Cos", "Man", "Euc", "Mink3", "Mink4", "Mink5", "MinkInf"
-use_threshold = False  # if True, use threshold-based pruning instead of top-k
-save_mask = False      # save the binary keep-mask for each pruning layer (mask.pt)
+use_s_stage = True
+sim_feature = "Key"
+partition = "Seq-U"
+sim_metric = "Cos"
+use_threshold = False
+save_mask = False
 
 
 PartitionT = Literal["Seq-U", "Seq-I", "Rand", "Alt", "Full"]
@@ -26,6 +26,21 @@ class SStageConfig:
     partition: PartitionT = "Seq-U"
     use_threshold: bool = False
     save_mask: bool = False
+
+AugMethodT = Literal["weight", "norm"]
+AltMethodT = Literal["ave", "rand"]
+
+@dataclass(frozen=True)
+class IStageConfig:
+    use_WPR: bool = True
+    use_EIR: bool = True
+    aug_CLS: bool = True
+    aug_method: AugMethodT = "weight"
+    alt_method: AltMethodT = "ave"
+
+    iters: int = 1
+    d: float = 0.0
+    var_filter: int = 0
 
 
 def _row_normalize(x: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
