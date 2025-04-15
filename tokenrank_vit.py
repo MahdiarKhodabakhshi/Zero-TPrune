@@ -260,3 +260,44 @@ def s_stage_step(
         torch.save(next_mask.detach().cpu(), "mask.pt")
 
     return importance, next_mask
+
+
+if __name__ == "__main__":
+    torch.manual_seed(0)
+
+    B, H, N = 2, 4, 9
+    logits = torch.randn(B, H, N, N)
+
+    imp_s, nxt_s = s_stage_step(
+        attention_score=logits,
+        token_mask=None,
+        cfg=SStageConfig(
+            tau_imp=0.1,
+            metric="Cos",
+            partition="Seq-U",
+            use_threshold=False,
+            save_mask=False,
+        ),
+        k_keep=4,
+    )
+    print("S-stage importance shape:", imp_s.shape)
+    print("S-stage next_mask shape :", nxt_s.shape)
+    print("S-stage kept per sample :", nxt_s.sum(dim=1).tolist())
+
+    imp_i, nxt_i = s_stage_step(
+        attention_score=logits,
+        token_mask=None,
+        cfg=SStageConfig(
+            tau_imp=0.1,
+            metric="Cos",
+            partition="Seq-U",
+            use_threshold=False,
+            save_mask=False,
+        ),
+        i_cfg=IStageConfig(use_WPR=True, use_EIR=True, aug_CLS=True, iters=2, d=0.15),
+        use_i_stage=True,
+        k_keep=4,
+    )
+    print("I-stage importance shape:", imp_i.shape)
+    print("I-stage next_mask shape :", nxt_i.shape)
+    print("I-stage kept per sample :", nxt_i.sum(dim=1).tolist())
